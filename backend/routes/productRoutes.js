@@ -1,14 +1,10 @@
 import express from 'express';
-import multer from 'multer';
 import * as productController from '../controllers/productController.js';
 
 const router = express.Router();
 
-// Configure multer for in-memory storage (BSON Binary)
-const upload = multer({ storage: multer.memoryStorage() });
-
-// Create product with images
-router.post('/create', upload.array('images', 5), productController.createProduct);
+// Create product with base64 image payload
+router.post('/addproduct', productController.addProduct);
 
 // Get all products
 router.get('/all', productController.getAllProducts);
@@ -17,7 +13,7 @@ router.get('/all', productController.getAllProducts);
 router.get('/:id', productController.getProductById);
 
 // Update product
-router.put('/update/:id', upload.array('images', 5), productController.updateProduct);
+router.put('/update/:id', productController.updateProduct);
 
 // Delete product
 router.delete('/delete/:id', productController.deleteProduct);

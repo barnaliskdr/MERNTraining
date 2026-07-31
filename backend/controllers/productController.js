@@ -1,58 +1,104 @@
 import Product from '../models/Product.js';
 import { ObjectId } from 'mongodb';
 
-// Create Product
-export const createProduct = async (req, res) => {
-  try {
-    const { name, description, price, category, stock, rating } = req.body;
 
-    // Validate required fields
-    if (!name || !description || !price || !category) {
-      return res.status(400).json({ error: 'Missing required fields' });
+
+const convertBase64ToBuffer = (base64Image, index) => {
+
+    let contentType = "image/jpeg";
+    let base64Data = base64Image;
+
+    // Handle Data URL format
+    const matches = base64Image.match(/^data:(.+);base64,(.+)$/);
+
+    if (matches) {
+        contentType = matches[1];
+        base64Data = matches[2];
     }
 
-    // Process uploaded images into BSON Binary format
-    const images = req.files?.map(file => ({
-      filename: file.originalname,
-      contentType: file.mimetype,
-      data: file.buffer,  // Already a Buffer (BSON Binary)
-      createdAt: new Date()
-    })) || [];
-
-    const product = new Product({
-      name,
-      description,
-      price,
-      category,
-      stock: stock || 1,
-      rating: rating || 0,
-      images
-    });
-
-    await product.save();
-    res.status(201).json({
-      success: true,
-      message: 'Product created successfully',
-      data: {
-        _id: product._id,
-        name: product.name,
-        description: product.description,
-        price: product.price,
-        category: product.category,
-        stock: product.stock,
-        rating: product.rating,
-        imageCount: product.images.length,
-        createdAt: product.createdAt
-      }
-    });
-  } catch (error) {
-    console.error('Create product error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to create product'
-    });
-  }
+    return {
+        filename: `image-${Date.now()}-${index}`,
+        contentType,
+        data: Buffer.from(base64Data, "base64"),
+        createdAt: new Date()
+    };
 };
+
+
+export const addProduct = async (req, res) => {
+
+    try {
+
+        const {
+            name,
+            description,
+            price,
+            category,
+            stock,
+            rating,
+            image,
+            images
+        } = req.body;
+
+        if (!name || !description || price == null || !category) {
+            return res.status(400).json({
+                success: false,
+                error: "Missing required fields"
+            });
+        }
+
+        let imageList = [];
+
+        // Multiple Images
+        if (Array.isArray(images) && images.length > 0) {
+            imageList = images;
+        }
+
+        // Single Image
+        else if (image) {
+            imageList = [image];
+        }
+
+        const bsonImages = imageList.map((img, index) =>
+            convertBase64ToBuffer(img, index + 1)
+        );
+
+        const product = new Product({
+
+            name,
+            description,
+            price,
+            category,
+            stock: stock || 1,
+            rating: rating || 0,
+            images: bsonImages
+
+        });
+
+        await product.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Product created successfully",
+            data: {
+                id: product._id,
+                imageCount: product.images.length
+            }
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+
+    }
+
+};
+
 
 // Get All Products
 export const getAllProducts = async (req, res) => {
@@ -150,14 +196,19 @@ export const updateProduct = async (req, res) => {
     if (rating !== undefined) product.rating = rating;
 
     // Add new images if provided
-    if (req.files && req.files.length > 0) {
-      const newImages = req.files.map(file => ({
-        filename: file.originalname,
-        contentType: file.mimetype,
-        data: file.buffer,  // BSON Binary
+    const imageInput = req.body.image || req.body.images || req.body.imageBase64;
+    const normalizedImage = normalizeImagePayload(imageInput);
+    const imagePayloads = Array.isArray(normalizedImage) ? normalizedImage : [normalizedImage].filter(Boolean);
+
+    if (imagePayloads.length > 0) {
+      const newImages = imagePayloads.map((image, index) => ({
+        filename: req.body.imageName || `image-${Date.now()}-${index + 1}`,
+        contentType: image.contentType || 'image/jpeg',
+        data: Buffer.from(image.base64, 'base64'),
         createdAt: new Date()
       }));
       product.images.push(...newImages);
+      product.image = imagePayloads[0].base64 || product.image;
     }
 
     await product.save();
